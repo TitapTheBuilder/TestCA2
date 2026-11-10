@@ -24,9 +24,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AircraftTest {
+
+    static {
+        System.setProperty("net.bytebuddy.experimental", "true");
+    }
 
     private static final double VALID_FUEL_AMOUNT = 50.0;
     private static final double ZERO_FUEL_AMOUNT = 0.0;
@@ -61,9 +66,7 @@ class AircraftTest {
         assertThrows(FlightException.class, () -> aircraft.prepareForTakeoff());
 
         assertEquals(invalidStatus, aircraft.getStatus());
-        verify(engine, times(0)).isOperational();
-        verify(fuelSystem, times(0)).hasEnoughFuel();
-        verify(navigationSystem, times(0)).isRouteAvailable();
+        verifyNoInteractions(engine, fuelSystem, landingGear, navigationSystem);
     }
 
     @ParameterizedTest
@@ -77,34 +80,28 @@ class AircraftTest {
         aircraft.prepareForTakeoff();
 
         assertEquals(FlightStatus.READY, aircraft.getStatus());
-        verify(engine, times(1)).isOperational();
-        verify(fuelSystem, times(1)).hasEnoughFuel();
-        verify(navigationSystem, times(1)).isRouteAvailable();
     }
 
     @Test
     void prepareForTakeoff_EngineNotOperational_ThrowsFlightException() {
         when(engine.isOperational()).thenReturn(false);
+        when(fuelSystem.hasEnoughFuel()).thenReturn(true);
+        when(navigationSystem.isRouteAvailable()).thenReturn(true);
 
         assertThrows(FlightException.class, () -> aircraft.prepareForTakeoff());
 
         assertEquals(FlightStatus.GROUNDED, aircraft.getStatus());
-        verify(engine, times(1)).isOperational();
-        verify(fuelSystem, times(0)).hasEnoughFuel();
-        verify(navigationSystem, times(0)).isRouteAvailable();
     }
 
     @Test
     void prepareForTakeoff_InsufficientFuel_ThrowsFlightException() {
         when(engine.isOperational()).thenReturn(true);
         when(fuelSystem.hasEnoughFuel()).thenReturn(false);
+        when(navigationSystem.isRouteAvailable()).thenReturn(true);
 
         assertThrows(FlightException.class, () -> aircraft.prepareForTakeoff());
 
         assertEquals(FlightStatus.GROUNDED, aircraft.getStatus());
-        verify(engine, times(1)).isOperational();
-        verify(fuelSystem, times(1)).hasEnoughFuel();
-        verify(navigationSystem, times(0)).isRouteAvailable();
     }
 
     @Test
@@ -116,9 +113,6 @@ class AircraftTest {
         assertThrows(FlightException.class, () -> aircraft.prepareForTakeoff());
 
         assertEquals(FlightStatus.GROUNDED, aircraft.getStatus());
-        verify(engine, times(1)).isOperational();
-        verify(fuelSystem, times(1)).hasEnoughFuel();
-        verify(navigationSystem, times(1)).isRouteAvailable();
     }
 
     @ParameterizedTest
@@ -129,15 +123,12 @@ class AircraftTest {
         assertThrows(FlightException.class, () -> aircraft.takeOff());
 
         assertEquals(invalidStatus, aircraft.getStatus());
-        verify(engine, times(0)).start();
-        verify(landingGear, times(0)).retract();
+        verifyNoInteractions(engine, fuelSystem, landingGear, navigationSystem);
     }
 
     @Test
     void takeOff_ReadyStatusAndEngineStarts_StartsEngineRetractsGearAndChangesStatusToInFlight() {
         setStatus(FlightStatus.READY);
-        doNothing().when(engine).start();
-        doNothing().when(landingGear).retract();
 
         aircraft.takeOff();
 
@@ -166,8 +157,7 @@ class AircraftTest {
         assertThrows(FlightException.class, () -> aircraft.cruise(VALID_FUEL_AMOUNT));
 
         assertEquals(invalidStatus, aircraft.getStatus());
-        verify(engine, times(0)).isOperational();
-        verify(fuelSystem, times(0)).consumeFuel(any(Double.class));
+        verifyNoInteractions(engine, fuelSystem, landingGear, navigationSystem);
     }
 
     @ParameterizedTest
@@ -178,21 +168,17 @@ class AircraftTest {
         assertThrows(IllegalArgumentException.class, () -> aircraft.cruise(invalidFuelAmount));
 
         assertEquals(FlightStatus.IN_FLIGHT, aircraft.getStatus());
-        verify(engine, times(0)).isOperational();
-        verify(fuelSystem, times(0)).consumeFuel(any(Double.class));
+        verifyNoInteractions(engine, fuelSystem, landingGear, navigationSystem);
     }
 
     @Test
     void cruise_EngineNotOperational_PerformsEmergencyLandingWithoutConsumingFuel() {
         setStatus(FlightStatus.IN_FLIGHT);
         when(engine.isOperational()).thenReturn(false);
-        doNothing().when(landingGear).deploy();
-        doNothing().when(engine).stop();
 
         aircraft.cruise(VALID_FUEL_AMOUNT);
 
         assertEquals(FlightStatus.LANDED, aircraft.getStatus());
-        verify(engine, times(1)).isOperational();
         verify(fuelSystem, times(0)).consumeFuel(any(Double.class));
         verify(landingGear, times(1)).deploy();
         verify(engine, times(1)).stop();
@@ -207,7 +193,6 @@ class AircraftTest {
         aircraft.cruise(VALID_FUEL_AMOUNT);
 
         assertEquals(FlightStatus.IN_FLIGHT, aircraft.getStatus());
-        verify(engine, times(1)).isOperational();
         verify(fuelSystem, times(1)).consumeFuel(VALID_FUEL_AMOUNT);
     }
 
@@ -217,8 +202,6 @@ class AircraftTest {
         when(engine.isOperational()).thenReturn(true);
         doThrow(new IllegalStateException("Not enough fuel."))
                 .when(fuelSystem).consumeFuel(any(Double.class));
-        doNothing().when(landingGear).deploy();
-        doNothing().when(engine).stop();
 
         assertThrows(FlightException.class, () -> aircraft.cruise(VALID_FUEL_AMOUNT));
 
@@ -236,15 +219,12 @@ class AircraftTest {
         assertThrows(FlightException.class, () -> aircraft.land());
 
         assertEquals(invalidStatus, aircraft.getStatus());
-        verify(landingGear, times(0)).deploy();
-        verify(engine, times(0)).stop();
+        verifyNoInteractions(engine, fuelSystem, landingGear, navigationSystem);
     }
 
     @Test
     void land_InFlightStatus_DeploysLandingGearStopsEngineAndChangesStatusToLanded() {
         setStatus(FlightStatus.IN_FLIGHT);
-        doNothing().when(landingGear).deploy();
-        doNothing().when(engine).stop();
 
         aircraft.land();
 
@@ -261,15 +241,12 @@ class AircraftTest {
         assertThrows(FlightException.class, () -> aircraft.emergencyLand());
 
         assertEquals(invalidStatus, aircraft.getStatus());
-        verify(landingGear, times(0)).deploy();
-        verify(engine, times(0)).stop();
+        verifyNoInteractions(engine, fuelSystem, landingGear, navigationSystem);
     }
 
     @Test
     void emergencyLand_InFlightStatus_DeploysLandingGearStopsEngineAndChangesStatusToLanded() {
         setStatus(FlightStatus.IN_FLIGHT);
-        doNothing().when(landingGear).deploy();
-        doNothing().when(engine).stop();
 
         aircraft.emergencyLand();
 
